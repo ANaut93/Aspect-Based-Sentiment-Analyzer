@@ -1,0 +1,231 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF--8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aspect-Based Sentiment Analyser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+
+    <div class="container mx-auto p-4 md:p-8">
+       
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-white">Aspect-Based Sentiment Analyser</h1>
+            <p class="text-gray-400 mt-2">Enter product reviews to uncover detailed insights.</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+           
+            <div class="lg:col-span-1 bg-gray-800 p-6 rounded-xl shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-white">Analyze New Review</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="review-text" class="block text-sm font-medium text-gray-300 mb-1">Paste Review Text</label>
+                        <textarea id="review-text" rows="8" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-3 text-gray-200 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="e.g., The screen is amazing but the battery life is disappointing."></textarea>
+                    </div>
+                    
+                    <div id="error-message" class="hidden bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
+                        <strong class="font-bold">Error: </strong>
+                        <span class="block sm:inline" id="error-text"></span>
+                    </div>
+                    <button id="analyze-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 flex items-center justify-center">
+                        <svg id="analyze-icon" class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        <svg id="loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span id="button-text">Analyze</span>
+                    </button>
+                </div>
+            </div>
+
+            
+            <div class="lg:col-span-2 space-y-8">
+                 
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <h3 class="text-xl font-semibold text-white mb-4">Overall Sentiment</h3>
+                    <div id="overall-sentiment-placeholder" class="text-center text-gray-500 py-8">
+                        Analysis results will appear here...
+                    </div>
+                    <div id="overall-sentiment-display" class="hidden flex items-center justify-center space-x-4">
+                         <p id="overall-sentiment-text" class="text-5xl font-bold"></p>
+                         <div id="overall-sentiment-emoji" class="text-6xl"></div>
+                    </div>
+                </div>
+
+                
+                <div class="bg-gray-800 p-6 rounded-xl shadow-lg">
+                    <h3 class="text-xl font-semibold text-white mb-4">Aspect Sentiment Breakdown</h3>
+                    <div class="chart-container">
+                        <canvas id="aspect-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+       
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const buttonText = document.getElementById('button-text');
+        const analyzeIcon = document.getElementById('analyze-icon');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const reviewTextArea = document.getElementById('review-text');
+        const errorMessageDiv = document.getElementById('error-message');
+        const errorTextSpan = document.getElementById('error-text');
+
+        const overallSentimentPlaceholder = document.getElementById('overall-sentiment-placeholder');
+        const overallSentimentDisplay = document.getElementById('overall-sentiment-display');
+        const overallSentimentText = document.getElementById('overall-sentiment-text');
+        const overallSentimentEmoji = document.getElementById('overall-sentiment-emoji');
+        const aspectChartCanvas = document.getElementById('aspect-chart');
+
+        let aspectChart; 
+
+        const sentimentColors = {
+            'Positive': 'rgba(74, 222, 128, 0.6)',
+            'Negative': 'rgba(248, 113, 113, 0.6)',
+            'Neutral': 'rgba(156, 163, 175, 0.6)',
+        };
+        const sentimentBorderColors = {
+            'Positive': 'rgba(74, 222, 128, 1)',
+            'Negative': 'rgba(248, 113, 113, 1)',
+            'Neutral': 'rgba(156, 163, 175, 1)',
+        };
+
+        function displayResults(data) {
+            overallSentimentPlaceholder.classList.add('hidden');
+            overallSentimentDisplay.classList.remove('hidden');
+            
+            if (!data.overallSentiment || !data.aspects || Object.keys(data.aspects).length === 0) {
+                 overallSentimentText.textContent = "Could not determine sentiment.";
+                 overallSentimentText.className = 'text-2xl font-bold text-gray-400';
+                 overallSentimentEmoji.textContent = '🤔';
+                 if (aspectChart) aspectChart.destroy();
+                 return;
+            }
+
+            overallSentimentText.textContent = data.overallSentiment;
+            if (data.overallSentiment === 'Positive') {
+                overallSentimentText.className = 'text-5xl font-bold text-green-400';
+                overallSentimentEmoji.textContent = '😊';
+            } else if (data.overallSentiment === 'Negative') {
+                overallSentimentText.className = 'text-5xl font-bold text-red-400';
+                overallSentimentEmoji.textContent = '😞';
+            } else { 
+                overallSentimentText.className = 'text-5xl font-bold text-gray-400';
+                overallSentimentEmoji.textContent = '😐';
+            }
+
+            const labels = Object.keys(data.aspects);
+            const sentiments = Object.values(data.aspects);
+            
+            const backgroundColors = sentiments.map(s => sentimentColors[s] || sentimentColors['Neutral']);
+            const borderColors = sentiments.map(s => sentimentBorderColors[s] || sentimentBorderColors['Neutral']);
+
+            if (aspectChart) {
+                aspectChart.destroy();
+            }
+
+            aspectChart = new Chart(aspectChartCanvas, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Sentiment',
+                        data: sentiments.map(s => s === 'Positive' ? 1 : (s === 'Negative' ? -1 : 0)),
+                        backgroundColor: backgroundColors,
+                        borderColor: borderColors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            ticks: { color: '#9CA3AF', callback: (val) => {
+                                if (val === 1) return 'Positive'; if (val === -1) return 'Negative'; if (val === 0) return 'Neutral'; return '';
+                            }},
+                            grid: { color: '#4B5563' }
+                        },
+                        y: { ticks: { color: '#D1D5DB' }, grid: { color: '#4B5563' } }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (ctx) => sentiments[ctx.dataIndex] } }
+                    }
+                }
+            });
+        }
+
+        function showError(message) {
+            errorMessageDiv.classList.remove('hidden');
+            errorTextSpan.textContent = message;
+        }
+
+        function hideError() {
+            errorMessageDiv.classList.add('hidden');
+        }
+
+       
+        analyzeBtn.addEventListener('click', async () => {
+            hideError();
+            const reviewText = reviewTextArea.value.trim();
+            if (!reviewText) {
+                showError("Please enter some review text to analyze.");
+                return;
+            }
+
+            buttonText.textContent = 'Analyzing...';
+            analyzeIcon.classList.add('hidden');
+            loadingSpinner.classList.remove('hidden');
+            analyzeBtn.disabled = true;
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ review_text: reviewText }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResults(data);
+
+            } catch (error) {
+                console.error("Error calling the analyze API:", error);
+                showError("Could not connect to the analysis server. Is it running?");
+            } finally {
+                
+                buttonText.textContent = 'Analyze';
+                analyzeIcon.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
+                analyzeBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
